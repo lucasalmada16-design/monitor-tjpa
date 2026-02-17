@@ -1,0 +1,13 @@
+{
+    "nome_usuario": "Lucas Almada de Sousa Martins",
+    "palavras_chave": [
+        "Oficial de Justiça",
+        "nomeação"
+    ],
+    "email_remetente": "SEU_EMAIL@gmail.com",
+    "email_senha": "SUA_SENHA_DE_APP",
+    "email_destino": "SEU_EMAIL@gmail.com",
+    "whatsapp_numero": "5591999999999",
+    "smtp_servidor": "smtp.gmail.com",
+    "smtp_porta": 587
+}
