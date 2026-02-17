@@ -1,55 +1,44 @@
-
+import requests
+from bs4 import BeautifulSoup
 import os
-import json
 import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime
-from openpyxl import load_workbook
 
-CONFIG_FILE = "config.json"
-HISTORICO_FILE = "historico_nomeacoes.xlsx"
+EMAIL_USER = os.environ.get("EMAIL_USER")
+EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
-def carregar_config():
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+SEU_NOME = "Lucas Almada de Sousa Martins"
 
-def enviar_email(config, assunto, mensagem):
+URL = "https://www.tjpa.jus.br/PortalExterno/diario/"
+
+def enviar_email(assunto, mensagem):
     msg = MIMEText(mensagem)
     msg['Subject'] = assunto
-    msg['From'] = config["email_remetente"]
-    msg['To'] = config["email_destino"]
+    msg['From'] = EMAIL_USER
+    msg['To'] = EMAIL_USER
 
-    with smtplib.SMTP(config["smtp_servidor"], config["smtp_porta"]) as server:
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
-        server.login(config["email_remetente"], config["email_senha"])
+        server.login(EMAIL_USER, EMAIL_PASS)
         server.send_message(msg)
 
-def salvar_historico(data, nome, cargo, edicao, seu_nome):
-    wb = load_workbook(HISTORICO_FILE)
-    ws = wb.active
-    ws.append([data, nome, cargo, edicao, seu_nome])
-    wb.save(HISTORICO_FILE)
-
 def verificar_diario():
-    # ESTE TRECHO É UM MODELO
-    # Aqui você poderá integrar com download automático do DJE do TJPA
-    
-    config = carregar_config()
-    
-    # Exemplo fictício de teste
-    data = datetime.now().strftime("%d/%m/%Y")
-    nome = "EXEMPLO DE TESTE"
-    cargo = "Oficial de Justiça"
-    edicao = "0000"
-    
-    seu_nome = "SIM" if nome.lower() == config["nome_usuario"].lower() else "NÃO"
-    
-    salvar_historico(data, nome, cargo, edicao, seu_nome)
-    
-    assunto = "Monitor TJPA - Nova verificação realizada"
-    mensagem = f"Verificação concluída em {data}\nNome encontrado: {nome}\nCargo: {cargo}"
-    
-    enviar_email(config, assunto, mensagem)
+    response = requests.get(URL)
+    soup = BeautifulSoup(response.text, "html.parser")
 
-if __name__ == "__main__":
-    verificar_diario()
+    texto = soup.get_text().lower()
+
+    if "oficial de justiça" in texto:
+        enviar_email(
+            "TJPA — Nova nomeação encontrada",
+            "Uma nova nomeação de Oficial de Justiça foi publicada."
+        )
+
+    if SEU_NOME.lower() in texto:
+        enviar_email(
+            "URGENTE — SEU NOME FOI ENCONTRADO NO TJPA",
+            "Seu nome apareceu no Diário Oficial do TJPA."
+        )
+
+verificar_diario()
