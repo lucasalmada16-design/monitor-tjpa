@@ -21,4 +21,4 @@ jobs:
       - name: Instalar dependências
         run: pip install requests beautifulsoup4 PyPDF2
       - name: Executar monitor
-        run: python verificar_semana_passada.py
+        run: run: python verificar_semana_passada.py
