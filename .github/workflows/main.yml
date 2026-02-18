@@ -19,7 +19,6 @@ jobs:
           python-version: '3.11'
 
       - name: Instalar dependências
-        run: pip install openpyxl requests beautifulsoup4 PyPDF2
-
+        run: pip install requests beautifulsoup4 PyPDF2
       - name: Executar monitor
         run: python monitor_tjpa.py
