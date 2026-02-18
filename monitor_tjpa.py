@@ -3,21 +3,15 @@ from bs4 import BeautifulSoup
 import os
 import smtplib
 from email.mime.text import MIMEText
+import PyPDF2
+import io
 
 EMAIL_USER = os.environ.get("EMAIL_USER")
 EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
 SEU_NOME = "Lucas Almada de Sousa Martins"
 
-# Lista de páginas do diário (últimos dias)
-URLS = [
-    "https://www.tjpa.jus.br/PortalExterno/diario/",
-    "https://www.tjpa.jus.br/PortalExterno/diario/?page=1",
-    "https://www.tjpa.jus.br/PortalExterno/diario/?page=2",
-    "https://www.tjpa.jus.br/PortalExterno/diario/?page=3",
-    "https://www.tjpa.jus.br/PortalExterno/diario/?page=4",
-    "https://www.tjpa.jus.br/PortalExterno/diario/?page=5"
-]
+BASE_URL = "https://www.tjpa.jus.br"
 
 def enviar_email(assunto, mensagem):
     msg = MIMEText(mensagem)
@@ -30,26 +24,54 @@ def enviar_email(assunto, mensagem):
         server.login(EMAIL_USER, EMAIL_PASS)
         server.send_message(msg)
 
-def verificar():
+def ler_pdf(url_pdf):
+
+    response = requests.get(url_pdf)
+
+    pdf_file = io.BytesIO(response.content)
+
+    reader = PyPDF2.PdfReader(pdf_file)
+
+    texto = ""
+
+    for page in reader.pages:
+        texto += page.extract_text()
+
+    return texto.lower()
+
+def verificar_diarios():
+
+    response = requests.get("https://www.tjpa.jus.br/PortalExterno/diario/")
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    links = soup.find_all("a")
+
     encontrou = False
 
-    for url in URLS:
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, "html.parser")
+    for link in links:
 
-        texto = soup.get_text().lower()
+        href = link.get("href")
 
-        if SEU_NOME.lower() in texto:
-            enviar_email(
-                "SEU NOME FOI ENCONTRADO NO DJE TJPA",
-                f"Seu nome foi encontrado nesta página:\n{url}"
-            )
-            encontrou = True
+        if href and ".pdf" in href.lower():
+
+            url_pdf = BASE_URL + href
+
+            texto_pdf = ler_pdf(url_pdf)
+
+            if SEU_NOME.lower() in texto_pdf:
+
+                enviar_email(
+                    "URGENTE — SEU NOME FOI ENCONTRADO NO DJE TJPA",
+                    f"Seu nome foi encontrado neste diário:\n{url_pdf}"
+                )
+
+                encontrou = True
 
     if not encontrou:
+
         enviar_email(
             "Verificação concluída",
-            "Seu nome não foi encontrado nos últimos diários verificados."
+            "Seu nome não foi encontrado nos diários verificados."
         )
 
-verificar()
+verificar_diarios()
