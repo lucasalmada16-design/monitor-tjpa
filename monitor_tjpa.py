@@ -3,6 +3,8 @@ from bs4 import BeautifulSoup
 import os
 import smtplib
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 import PyPDF2
 import io
 
@@ -11,42 +13,34 @@ EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
 SEU_NOME = "Lucas Almada de Sousa Martins"
 
-BASE_URL = "https://www.tjpa.jus.br"
+URL = "https://dje.tjpa.jus.br/ClientDJEletronico/"
 
-def enviar_email(assunto, mensagem):
-    msg = MIMEText(mensagem)
+def enviar_email(assunto, mensagem, pdf_bytes=None, nome_pdf="diario.pdf"):
+
+    msg = MIMEMultipart()
+
     msg['Subject'] = assunto
     msg['From'] = EMAIL_USER
     msg['To'] = EMAIL_USER
+
+    msg.attach(MIMEText(mensagem))
+
+    if pdf_bytes:
+        part = MIMEApplication(pdf_bytes, Name=nome_pdf)
+        part['Content-Disposition'] = f'attachment; filename="{nome_pdf}"'
+        msg.attach(part)
 
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASS)
         server.send_message(msg)
 
-def ler_pdf(url_pdf):
+def obter_link_pdf():
 
-    response = requests.get(url_pdf)
-
-    pdf_file = io.BytesIO(response.content)
-
-    reader = PyPDF2.PdfReader(pdf_file)
-
-    texto = ""
-
-    for page in reader.pages:
-        texto += page.extract_text()
-
-    return texto.lower()
-
-def verificar_diarios():
-
-    response = requests.get("https://www.tjpa.jus.br/PortalExterno/diario/")
+    response = requests.get(URL)
     soup = BeautifulSoup(response.text, "html.parser")
 
     links = soup.find_all("a")
-
-    encontrou = False
 
     for link in links:
 
@@ -54,24 +48,63 @@ def verificar_diarios():
 
         if href and ".pdf" in href.lower():
 
-            url_pdf = BASE_URL + href
+            if href.startswith("http"):
+                return href
+            else:
+                return URL + href
 
-            texto_pdf = ler_pdf(url_pdf)
+    return None
 
-            if SEU_NOME.lower() in texto_pdf:
+def verificar_pdf():
 
-                enviar_email(
-                    "URGENTE — SEU NOME FOI ENCONTRADO NO DJE TJPA",
-                    f"Seu nome foi encontrado neste diário:\n{url_pdf}"
-                )
+    link_pdf = obter_link_pdf()
+
+    if not link_pdf:
+
+        enviar_email(
+            "Erro monitor TJPA",
+            "Não foi possível encontrar o PDF do diário."
+        )
+
+        return
+
+    response = requests.get(link_pdf)
+
+    pdf_bytes = response.content
+
+    reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+
+    encontrou = False
+
+    paginas_encontradas = []
+
+    for i, page in enumerate(reader.pages):
+
+        texto = page.extract_text()
+
+        if texto:
+
+            texto_lower = texto.lower()
+
+            if SEU_NOME.lower() in texto_lower or "oficial de justiça" in texto_lower:
 
                 encontrou = True
 
-    if not encontrou:
+                paginas_encontradas.append(i + 1)
+
+    if encontrou:
 
         enviar_email(
-            "Verificação concluída",
-            "Seu nome não foi encontrado nos diários verificados."
+            "TJPA — Nomeação encontrada",
+            f"Encontrado na(s) página(s): {paginas_encontradas}\nPDF em anexo.",
+            pdf_bytes
         )
 
-verificar_diarios()
+    else:
+
+        enviar_email(
+            "TJPA — Verificação concluída",
+            "Nenhuma nomeação encontrada no diário mais recente."
+        )
+
+verificar_pdf()
