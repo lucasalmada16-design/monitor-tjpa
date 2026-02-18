@@ -1,20 +1,23 @@
 import requests
-from bs4 import BeautifulSoup
 import os
 import smtplib
+import io
+from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import PyPDF2
-import io
 
 EMAIL_USER = os.environ.get("EMAIL_USER")
 EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
 SEU_NOME = "Lucas Almada de Sousa Martins"
 
-BASE_URL = "https://dje.tjpa.jus.br"
-URL = "https://dje.tjpa.jus.br/ClientDJEletronico/"
+# URL base correta do DJE
+BASE = "https://dje.tjpa.jus.br"
+
+# Endpoint real dos PDFs
+PDF_URL = BASE + "/ClientDJEletronico/PDF.aspx"
 
 
 def enviar_email(assunto, mensagem, pdf_bytes=None, nome_pdf="diario.pdf"):
@@ -39,68 +42,66 @@ def enviar_email(assunto, mensagem, pdf_bytes=None, nome_pdf="diario.pdf"):
         server.send_message(msg)
 
 
-def obter_pdfs():
+def baixar_pdf_por_data(data):
 
-    response = requests.get(URL)
+    data_str = data.strftime("%d/%m/%Y")
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    params = {
+        "data": data_str
+    }
 
-    pdfs = []
+    response = requests.get(PDF_URL, params=params)
 
-    for link in soup.find_all("a"):
+    if response.status_code == 200 and len(response.content) > 5000:
 
-        href = link.get("href")
+        return response.content
 
-        if href and ".pdf" in href.lower():
-
-            if href.startswith("http"):
-                pdfs.append(href)
-            else:
-                pdfs.append(BASE_URL + href)
-
-    return pdfs
+    return None
 
 
 def verificar():
 
-    pdfs = obter_pdfs()
+    hoje = datetime.today()
 
     encontrou = False
 
-    for pdf_url in pdfs:
+    for i in range(7):
 
-        response = requests.get(pdf_url)
+        data = hoje - timedelta(days=i)
 
-        pdf_bytes = response.content
+        pdf_bytes = baixar_pdf_por_data(data)
+
+        if not pdf_bytes:
+            continue
 
         reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
 
         paginas = []
 
-        for i, page in enumerate(reader.pages):
+        for num, page in enumerate(reader.pages):
 
             texto = page.extract_text()
 
             if texto and SEU_NOME.lower() in texto.lower():
 
-                paginas.append(i+1)
+                paginas.append(num+1)
 
         if paginas:
 
             encontrou = True
 
             enviar_email(
-                "SEU NOME FOI ENCONTRADO — DJE TJPA",
-                f"Arquivo: {pdf_url}\nPágina(s): {paginas}",
+                "SEU NOME FOI ENCONTRADO NO DJE",
+                f"Data: {data.strftime('%d/%m/%Y')}\nPágina(s): {paginas}",
                 pdf_bytes,
-                "diario_encontrado.pdf"
+                f"DJE_{data.strftime('%Y%m%d')}.pdf"
             )
 
     if not encontrou:
 
         enviar_email(
-            "Verificação concluída",
-            "Seu nome não foi encontrado nos diários da semana passada."
+            "Verificação DJE concluída",
+            "Seu nome não foi encontrado na última semana."
         )
 
 
