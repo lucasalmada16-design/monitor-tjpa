@@ -5,20 +5,12 @@ import smtplib
 from email.message import EmailMessage
 import PyPDF2
 
-# =============================
-# CONFIGURAÇÃO
-# =============================
-
 EMAIL = os.environ.get("EMAIL_USER")
 SENHA_APP = os.environ.get("EMAIL_PASS")
 
 SEU_NOME = "Lucas Almada de Sousa Martins"
 
 ANO = 2026
-EDICAO_INICIAL = 8244
-EDICAO_FINAL = 8259
-
-# =============================
 
 BASE_URL = "https://dje.tjpa.jus.br/DJEletronico/rest/DJEletronicoService/publicacao/visualizarDiarioPDF"
 
@@ -37,44 +29,53 @@ def enviar_email(assunto, corpo):
         smtp.send_message(msg)
 
 
-def verificar_mes():
+def descobrir_edicao_recente():
 
-    encontrados = []
-
-    for numero in range(EDICAO_INICIAL, EDICAO_FINAL + 1):
+    # começa procurando de um número alto
+    for numero in range(9000, 8000, -1):
 
         url = f"{BASE_URL}/{numero}-{ANO}"
 
-        print("Verificando edição:", numero)
-
         r = requests.get(url)
 
-        if r.status_code != 200:
+        if r.status_code == 200 and len(r.content) > 10000:
+            return numero, url, r.content
+
+    return None, None, None
+
+
+def verificar_edicao_mais_recente():
+
+    numero, url, pdf_bytes = descobrir_edicao_recente()
+
+    if not numero:
+        print("Não foi possível descobrir a edição mais recente.")
+        return
+
+    print("Edição mais recente encontrada:", numero)
+
+    reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+
+    paginas_encontradas = []
+
+    for pagina_num, pagina in enumerate(reader.pages):
+
+        texto = pagina.extract_text()
+
+        if not texto:
             continue
 
-        pdf_bytes = r.content
+        if SEU_NOME.lower() in texto.lower():
+            paginas_encontradas.append(pagina_num + 1)
 
-        reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+    if paginas_encontradas:
 
-        for pagina_num, pagina in enumerate(reader.pages):
-
-            texto = pagina.extract_text()
-
-            if not texto:
-                continue
-
-            if SEU_NOME.lower() in texto.lower():
-
-                encontrados.append(
-                    f"Edição {numero}-{ANO} | Página {pagina_num+1}\nLink: {url}\n"
-                )
-
-    if encontrados:
-
-        corpo_email = "🚨 SEU NOME FOI ENCONTRADO NO DJE:\n\n"
-
-        for item in encontrados:
-            corpo_email += item + "\n"
+        corpo_email = (
+            f"🚨 SEU NOME FOI ENCONTRADO\n\n"
+            f"Edição: {numero}-{ANO}\n"
+            f"Páginas: {paginas_encontradas}\n\n"
+            f"Link direto:\n{url}"
+        )
 
         enviar_email(
             "🚨 TJPA — SEU NOME FOI ENCONTRADO",
@@ -84,7 +85,7 @@ def verificar_mes():
         print("Nome encontrado e email enviado.")
 
     else:
-        print("Nenhuma ocorrência encontrada.")
+        print("Nome não encontrado na edição mais recente.")
 
 
-verificar_mes()
+verificar_edicao_mais_recente()
