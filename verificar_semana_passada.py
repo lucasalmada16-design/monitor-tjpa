@@ -2,7 +2,6 @@ import requests
 import os
 import smtplib
 import io
-from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -12,18 +11,17 @@ EMAIL_USER = os.environ.get("EMAIL_USER")
 EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
 SEU_NOME = "Lucas Almada de Sousa Martins"
+PALAVRA_CARGO = "Oficial de Justiça"
 
-# URL base correta do DJE
-BASE = "https://dje.tjpa.jus.br"
+ANO = 2026
+EDICAO_ATUAL = 8251   # ALTERE SE NECESSÁRIO
 
-# Endpoint real dos PDFs
-PDF_URL = BASE + "/ClientDJEletronico/PDF.aspx"
+BASE_URL = "https://dje.tjpa.jus.br/DJEletronico/rest/DJEletronicoService/publicacao/visualizarDiarioPDF"
 
 
 def enviar_email(assunto, mensagem, pdf_bytes=None, nome_pdf="diario.pdf"):
 
     msg = MIMEMultipart()
-
     msg['Subject'] = assunto
     msg['From'] = EMAIL_USER
     msg['To'] = EMAIL_USER
@@ -36,72 +34,61 @@ def enviar_email(assunto, mensagem, pdf_bytes=None, nome_pdf="diario.pdf"):
         msg.attach(part)
 
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
-
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASS)
         server.send_message(msg)
 
 
-def baixar_pdf_por_data(data):
-
-    data_str = data.strftime("%d/%m/%Y")
-
-    params = {
-        "data": data_str
-    }
-
-    response = requests.get(PDF_URL, params=params)
-
-    if response.status_code == 200 and len(response.content) > 5000:
-
-        return response.content
-
-    return None
-
-
 def verificar():
 
-    hoje = datetime.today()
-
-    encontrou = False
+    encontrou_algo = False
 
     for i in range(7):
 
-        data = hoje - timedelta(days=i)
+        numero_edicao = EDICAO_ATUAL - i
 
-        pdf_bytes = baixar_pdf_por_data(data)
+        url = f"{BASE_URL}/{numero_edicao}-{ANO}"
 
-        if not pdf_bytes:
+        response = requests.get(url)
+
+        if response.status_code != 200:
             continue
+
+        pdf_bytes = response.content
 
         reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
 
-        paginas = []
+        paginas_encontradas = []
 
         for num, page in enumerate(reader.pages):
 
             texto = page.extract_text()
 
-            if texto and SEU_NOME.lower() in texto.lower():
+            if not texto:
+                continue
 
-                paginas.append(num+1)
+            texto_lower = texto.lower()
 
-        if paginas:
+            if SEU_NOME.lower() in texto_lower or PALAVRA_CARGO.lower() in texto_lower:
 
-            encontrou = True
+                paginas_encontradas.append(num + 1)
+
+        if paginas_encontradas:
+
+            encontrou_algo = True
 
             enviar_email(
-                "SEU NOME FOI ENCONTRADO NO DJE",
-                f"Data: {data.strftime('%d/%m/%Y')}\nPágina(s): {paginas}",
+                f"TJPA — Encontrado na edição {numero_edicao}-{ANO}",
+                f"Edição: {numero_edicao}-{ANO}\nPágina(s): {paginas_encontradas}",
                 pdf_bytes,
-                f"DJE_{data.strftime('%Y%m%d')}.pdf"
+                f"DJE_{numero_edicao}-{ANO}.pdf"
             )
 
-    if not encontrou:
+    if not encontrou_algo:
 
         enviar_email(
-            "Verificação DJE concluída",
-            "Seu nome não foi encontrado na última semana."
+            "TJPA — Verificação concluída",
+            "Nenhuma ocorrência encontrada nas últimas 7 edições."
         )
 
 
