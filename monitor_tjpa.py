@@ -1,110 +1,90 @@
 import requests
-from bs4 import BeautifulSoup
+import io
 import os
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
+from email.message import EmailMessage
 import PyPDF2
-import io
 
-EMAIL_USER = os.environ.get("EMAIL_USER")
-EMAIL_PASS = os.environ.get("EMAIL_PASS")
+# =============================
+# CONFIGURAÇÃO
+# =============================
+
+EMAIL = os.environ.get("EMAIL_USER")
+SENHA_APP = os.environ.get("EMAIL_PASS")
 
 SEU_NOME = "Lucas Almada de Sousa Martins"
 
-URL = "https://dje.tjpa.jus.br/ClientDJEletronico/"
+ANO = 2026
+EDICAO_INICIAL = 8244
+EDICAO_FINAL = 8259
 
-def enviar_email(assunto, mensagem, pdf_bytes=None, nome_pdf="diario.pdf"):
+# =============================
 
-    msg = MIMEMultipart()
+BASE_URL = "https://dje.tjpa.jus.br/DJEletronico/rest/DJEletronicoService/publicacao/visualizarDiarioPDF"
 
-    msg['Subject'] = assunto
-    msg['From'] = EMAIL_USER
-    msg['To'] = EMAIL_USER
 
-    msg.attach(MIMEText(mensagem))
+def enviar_email(assunto, corpo):
 
-    if pdf_bytes:
-        part = MIMEApplication(pdf_bytes, Name=nome_pdf)
-        part['Content-Disposition'] = f'attachment; filename="{nome_pdf}"'
-        msg.attach(part)
+    msg = EmailMessage()
+    msg["Subject"] = assunto
+    msg["From"] = EMAIL
+    msg["To"] = EMAIL
+    msg.set_content(corpo)
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASS)
-        server.send_message(msg)
+    with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
+        smtp.starttls()
+        smtp.login(EMAIL, SENHA_APP)
+        smtp.send_message(msg)
 
-def obter_link_pdf():
 
-    response = requests.get(URL)
-    soup = BeautifulSoup(response.text, "html.parser")
+def verificar_mes():
 
-    links = soup.find_all("a")
+    encontrados = []
 
-    for link in links:
+    for numero in range(EDICAO_INICIAL, EDICAO_FINAL + 1):
 
-        href = link.get("href")
+        url = f"{BASE_URL}/{numero}-{ANO}"
 
-        if href and ".pdf" in href.lower():
+        print("Verificando edição:", numero)
 
-            if href.startswith("http"):
-                return href
-            else:
-                return URL + href
+        r = requests.get(url)
 
-    return None
+        if r.status_code != 200:
+            continue
 
-def verificar_pdf():
+        pdf_bytes = r.content
 
-    link_pdf = obter_link_pdf()
+        reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
 
-    if not link_pdf:
+        for pagina_num, pagina in enumerate(reader.pages):
 
-        enviar_email(
-            "Erro monitor TJPA",
-            "Não foi possível encontrar o PDF do diário."
-        )
+            texto = pagina.extract_text()
 
-        return
+            if not texto:
+                continue
 
-    response = requests.get(link_pdf)
+            if SEU_NOME.lower() in texto.lower():
 
-    pdf_bytes = response.content
+                encontrados.append(
+                    f"Edição {numero}-{ANO} | Página {pagina_num+1}\nLink: {url}\n"
+                )
 
-    reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+    if encontrados:
 
-    encontrou = False
+        corpo_email = "🚨 SEU NOME FOI ENCONTRADO NO DJE:\n\n"
 
-    paginas_encontradas = []
-
-    for i, page in enumerate(reader.pages):
-
-        texto = page.extract_text()
-
-        if texto:
-
-            texto_lower = texto.lower()
-
-            if SEU_NOME.lower() in texto_lower or "oficial de justiça" in texto_lower:
-
-                encontrou = True
-
-                paginas_encontradas.append(i + 1)
-
-    if encontrou:
+        for item in encontrados:
+            corpo_email += item + "\n"
 
         enviar_email(
-            "TJPA — Nomeação encontrada",
-            f"Encontrado na(s) página(s): {paginas_encontradas}\nPDF em anexo.",
-            pdf_bytes
+            "🚨 TJPA — SEU NOME FOI ENCONTRADO",
+            corpo_email
         )
+
+        print("Nome encontrado e email enviado.")
 
     else:
+        print("Nenhuma ocorrência encontrada.")
 
-        enviar_email(
-            "TJPA — Verificação concluída",
-            "Nenhuma nomeação encontrada no diário mais recente."
-        )
 
-verificar_pdf()
+verificar_mes()
