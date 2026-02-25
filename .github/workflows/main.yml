@@ -1,8 +1,6 @@
-name: Monitor TJPA
+name: Monitor DJE
 
 on:
-  schedule:
-    - cron: '0 1 * * *'
   workflow_dispatch:
 
 jobs:
@@ -19,6 +17,10 @@ jobs:
           python-version: '3.11'
 
       - name: Instalar dependências
-        run: pip install requests beautifulsoup4 PyPDF2
+        run: pip install requests PyPDF2
+
       - name: Executar monitor
-        run: python verificar_semana_passada.py
+        run: python monitor_dje.py
+        env:
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
